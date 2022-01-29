@@ -25,6 +25,11 @@ from tensorboardX import SummaryWriter
 writer = SummaryWriter('runs/image_classifier')
 device=torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
+# paths
+data_dir="C:/codebase/ComputerVision/data/ants_bees_cats_dogs"
+sample_train_dir="C:/codebase/ComputerVision/data/sample_train_data"
+sample_test_dir="C:/codebase/ComputerVision/data/sample_test_data"
+
 # Params
 learning_rate=0.001
 momentum=0.9
@@ -54,7 +59,6 @@ data_transforms={
 }
 
 # import data
-data_dir="C:\codebase\data1"
 sets=['train','val']
 image_datasets={x:datasets.ImageFolder(os.path.join(data_dir,x),data_transforms[x]) for x in sets}
 dataloaders={x:torch.utils.data.DataLoader(image_datasets[x], batch_size=batch_size, shuffle=True, num_workers=0) for x in sets}
@@ -207,7 +211,7 @@ optimizer=optim.SGD(model.fc.parameters(), lr=learning_rate, momentum=momentum)
 scheduler=lr_scheduler.StepLR(optimizer, step_size=step_size, gamma=gamma)
 
 # view train samples
-view_samples(sample_images=glob.glob("C:/codebase/Pytorch/sample_data/*.jpg"))
+view_samples(sample_images=glob.glob(sample_train_dir+"/*.jpg"))
 # Begin train
 model=train_model(model, criterion, optimizer, scheduler, num_epochs=num_epochs)
 # save model
