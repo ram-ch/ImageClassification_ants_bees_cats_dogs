@@ -35,7 +35,7 @@ learning_rate=0.001
 momentum=0.9
 step_size=7
 gamma=0.1
-num_epochs=24
+num_epochs=1
 batch_size=5
 mean=np.array([0.45,0.456,0.406])
 std=np.array([0.229, 0.224, 0.225])
@@ -55,7 +55,11 @@ data_transforms={
                                transforms.CenterCrop(224),
                                transforms.ToTensor(),
                                transforms.Normalize(mean,std)
-                               ])
+                               ]),
+    'test': transforms.Compose([
+                                transforms.Resize(256),
+                                transforms.CenterCrop(224),
+                                transforms.ToTensor()])
 }
 
 # import data
@@ -82,11 +86,8 @@ def view_samples(sample_images):
         plt.title(title, fontsize=label_font_size)
         plt.xticks([])
         plt.yticks([])
-        # plt.tight_layout()
-    # plt.show()
     writer.add_figure('TrainingImages/sample', fig, global_step=0)
     writer.flush()
-    # writer.close()
     return
 
 def view_confusionmatrix(predictions, actuals, phase,global_step):  
@@ -99,7 +100,6 @@ def view_confusionmatrix(predictions, actuals, phase,global_step):
     fig=plt.figure(figsize = (5,5))
     sns.set(font_scale=1.4)
     sns.heatmap(df_cm, cmap="Blues", annot=True,fmt='g',annot_kws={"size": 16})
-    # plt.show()
     writer.add_figure(f'ConfusionMatrix/{phase}', fig, global_step=global_step)
     writer.flush()
     return
@@ -216,21 +216,62 @@ view_samples(sample_images=glob.glob(sample_train_dir+"/*.jpg"))
 model=train_model(model, criterion, optimizer, scheduler, num_epochs=num_epochs)
 # save model
 date = datetime.now().strftime("%Y_%m_%d_%I_%M_%S")
-file_name=f"{date}_bestmodel.pth"
-torch.save(model, f'saved_model/{file_name}')
+save_path=f"saved_model/{date}_bestmodel.pth"
+torch.save(model, save_path)
+
+
+# Begin Test 
+saved_model="saved_model/2022_01_28_05_33_34_bestmodel.pth"
 # load model
-trained_model=torch.load(f'saved_model/{file_name}')
+trained_model=torch.load(saved_model)
 trained_model.eval()
-trained_model.to(device)
+print("Loaded saved model...")
 
-# Begin Test
-for inputs, labels in dataloaders['val']:
-    inputs = inputs.to(device)
-    outputs = trained_model(inputs)
-    _, preds = torch.max(outputs, 1)
-    final_predictions=list(preds.cpu().detach().numpy())
-    print(final_predictions)
+def image_loader(loader, image_name):
+    image = Image.open(image_name)
+    image = loader(image).float()
+    image = image.clone().detach()
+    image = image.unsqueeze(0)
+    return image
 
 
+def view_sample_results(model,sample_test_dir):
+    test_images=glob.glob(sample_test_dir+"/*.jpg")
+    # create figure
+    fig = plt.figure(figsize=(10, 7))
+    rows = 2
+    columns = 4
+    for i,img in enumerate(test_images):
+        # Load image
+        image=image_loader(data_transforms['test'], img)
+        output=trained_model(image)
+        prob = F.softmax(output, dim=1)
+        top_p, top_class = prob.topk(4)  
+        
+        top_probs=top_p.detach().numpy()[0]
+        top_classes=top_class.detach().numpy()[0]
+        classes=[idx_2_class[str(i)] for i in top_classes]
+        probabilities=[round(i*100,2) for i in top_probs]
+        results=dict(zip(classes,probabilities))        
+
+        img = plt.imread(img)
+        fig.add_subplot(rows, columns, i+1)    
+        # showing image
+        plt.imshow(img)
+        plt.axis('off')
+        data="ant: {}%\nbee: {}%\ncat: {}%\ndog: {}%".format(results['ants'],results['bees'],results['cats'],results['dogs'])    
+        plt.text(x=2, y=-3, s=data,c='red',fontsize=7)
+    writer.add_figure('TestingImages/sample', fig, global_step=0)
+    writer.flush()
+
+
+
+view_sample_results(trained_model,sample_test_dir)
+
+
+# TODO: Run inference on all the images in validation
+# TODO: Get the probabilities
+# TODO: Compute TPR, FPR
+# TODO: Plot the auroc for different thresholds
 
 writer.close()

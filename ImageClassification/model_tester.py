@@ -20,7 +20,7 @@ import torch.nn.functional as F
 device=torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 # params
-test_images="C:/codebase/ComputerVision/data/sample_test_data"
+test_image_dir="C:/codebase/ComputerVision/data/sample_test_data"
 saved_model="saved_model/2022_01_28_05_33_34_bestmodel.pth"
 idx_2_class={'0':'ants', '1':'bees', '2':'cats', '3':'dogs'}
 
@@ -41,7 +41,13 @@ data_transforms = transforms.Compose([
 trained_model=torch.load(saved_model)
 trained_model.eval()
 
-for img in glob.glob(test_images+"/*.jpg"):
+test_images=glob.glob(test_image_dir+"/*.jpg")
+# create figure
+fig = plt.figure(figsize=(10, 7))
+rows = 2
+columns = 4
+
+for i,img in enumerate(test_images):
     # Load image
     image=image_loader(data_transforms, img)
     output=trained_model(image)
@@ -54,11 +60,18 @@ for img in glob.glob(test_images+"/*.jpg"):
     probabilities=[round(i*100,2) for i in top_probs]
     results=dict(zip(classes,probabilities))
     
-    # view image
-    org_image = Image.open(img)    
-    data="ant: {}%\nbee: {}%\ncat: {}%\ndog: {}%".format(results['ants'],results['bees'],results['cats'],results['dogs'])    
-    plt.text(x=30, y=70, s=data,c='red')
-    plt.imshow(org_image)
-    plt.show()
-    
-    
+
+    img = plt.imread(img)
+    fig.add_subplot(rows, columns, i+1)    
+    # showing image
+    plt.imshow(img)
+    plt.axis('off')
+    data="ant: {}% bee: {}% cat: {}% dog: {}%".format(results['ants'],results['bees'],results['cats'],results['dogs'])    
+    plt.text(x=2, y=-3, s=data,c='red',fontsize=0.5)
+  
+plt.show()
+
+# TODO: Run inference on all the images in validation
+# TODO: Get the probabilities
+# TODO: Compute TPR, FPR
+# TODO: Plot the auroc for different thresholds
