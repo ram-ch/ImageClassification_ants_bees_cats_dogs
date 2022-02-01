@@ -16,7 +16,7 @@ import torch.optim as optim
 from torch.optim import lr_scheduler
 import torchvision
 from torchvision import datasets, models, transforms
-from sklearn.metrics import confusion_matrix, roc_auc_score, precision_score, recall_score,f1_score, log_loss
+from sklearn.metrics import confusion_matrix, roc_auc_score, precision_score, recall_score,f1_score, log_loss, roc_curve, auc
 
 import torch.nn.functional as F
 from tensorboardX import SummaryWriter
@@ -29,6 +29,7 @@ device=torch.device("cuda" if torch.cuda.is_available() else "cpu")
 data_dir="C:/codebase/ComputerVision/data/ants_bees_cats_dogs"
 sample_train_dir="C:/codebase/ComputerVision/data/sample_train_data"
 sample_test_dir="C:/codebase/ComputerVision/data/sample_test_data"
+test_image_dir="C:/codebase/ComputerVision/data/ants_bees_cats_dogs/val"
 
 # Params
 learning_rate=0.001
@@ -40,7 +41,7 @@ batch_size=5
 mean=np.array([0.45,0.456,0.406])
 std=np.array([0.229, 0.224, 0.225])
 idx_2_class={'0':'ants', '1':'bees', '2':'cats', '3':'dogs'}
-
+class_2_idx={'ants': 0, 'bees': 1,'cats':2,'dogs':3}
 
 # Data transformers
 data_transforms={
@@ -116,6 +117,80 @@ def view_precision_recall_f1(predictions, actuals,phase,epoch):
     writer.flush()
     return
 
+
+def get_predictions(loader,img,trained_model):
+    image = Image.open(img)
+    image = loader(image).float()
+    image = image.clone().detach()
+    image = image.unsqueeze(0)
+    output = trained_model(image)
+    prob = F.softmax(output, dim=1)
+    top_p, top_class = prob.topk(4)  
+    # get labels and scores
+    top_probs=top_p.detach().numpy()[0]
+    top_classes=top_class.detach().numpy()[0]
+    return top_probs,top_classes
+
+
+def view_sample_results(trained_model,sample_test_dir):
+    test_images=glob.glob(sample_test_dir+"/*.jpg")
+    # create figure
+    fig = plt.figure(figsize=(10, 7))
+    rows = 2
+    columns = 4
+    for i,img in enumerate(test_images):
+        # Load image
+        top_probs, top_classes = get_predictions(data_transforms['test'], img, trained_model)
+        classes=[idx_2_class[str(i)] for i in top_classes]
+        probabilities=[round(i*100,2) for i in top_probs]
+        results=dict(zip(classes,probabilities))        
+        img = plt.imread(img)
+        fig.add_subplot(rows, columns, i+1)    
+        # showing image
+        plt.imshow(img)
+        plt.axis('off')
+        data="ant: {}%\nbee: {}%\ncat: {}%\ndog: {}%".format(results['ants'],results['bees'],results['cats'],results['dogs'])    
+        plt.text(x=2, y=-3, s=data,c='red',fontsize=7)
+    writer.add_figure('Testimages/sample', fig, global_step=0)
+    writer.flush()
+
+
+def view_auc_roc(trained_model,test_image_dir):   
+    test_images=glob.glob(test_image_dir+"/*/*.jpg") 
+    final_predictions=[]
+    ground_truth=[]
+    j=0
+    print("Performing inference on test images...")
+    for i,img in enumerate(test_images):
+        ground_truth.append(img.split("\\")[1])
+        # Load image
+        top_probs, top_classes = get_predictions(data_transforms['test'], img, trained_model)    
+        classes=[idx_2_class[str(i)] for i in top_classes]
+        probabilities=[round(i*100,2) for i in top_probs]
+        results=dict(zip(classes,top_probs))
+        final_predictions.append(results)
+
+    ground_truth=[class_2_idx[i] for i in ground_truth]
+    results_df=pd.DataFrame.from_dict(final_predictions)
+    # create figure
+    fig = plt.figure(figsize=(10, 7))
+    for i,c in enumerate(class_names):
+        fpr, tpr, thresh = roc_curve(ground_truth, results_df[c].tolist(), pos_label=i)
+        auc_val=round(auc(fpr,tpr),4)
+        plt.plot(fpr,tpr,label=f'AUC {c}: {auc_val}')
+        plt.grid()
+        plt.xlim([0.0, 1.0])
+        plt.ylim([0.0, 1.05])
+        plt.xlabel("False Positive Rate")
+        plt.ylabel("True Positive Rate")
+        plt.title("Receiver operating characteristic - Multiclass")
+        plt.legend(loc="lower right")    
+
+    writer.add_figure('AUC-ROC', fig, global_step=0)
+    writer.flush()
+    return
+
+
 def train_model(model, criterion, optimizer, scheduler, num_epochs=25):
     since = time.time()
     best_model_wts = copy.deepcopy(model.state_dict())
@@ -142,7 +217,6 @@ def train_model(model, criterion, optimizer, scheduler, num_epochs=25):
                     outputs = model(inputs)
                     _, preds = torch.max(outputs, 1)
                     loss = criterion(outputs, labels)
-
                     # backward + optimize only if in training phase
                     if phase == 'train':
                         optimizer.zero_grad()
@@ -164,8 +238,7 @@ def train_model(model, criterion, optimizer, scheduler, num_epochs=25):
             print(f"{phase} Loss: {epoch_loss:.4f} | {phase} Accuracy: {epoch_acc:.4f}")
 
             # Compute classification metrics
-            view_confusionmatrix(prediction_labels, actual_labels,phase,epoch)           
-        
+            view_confusionmatrix(prediction_labels, actual_labels,phase,epoch)             
             
             if phase=='train':
                 scheduler.step()
@@ -187,7 +260,6 @@ def train_model(model, criterion, optimizer, scheduler, num_epochs=25):
     time_elapsed = time.time() - since
     print('Training complete in {:.0f}m {:.0f}s'.format(time_elapsed // 60, time_elapsed % 60))
     print('Best val Acc: {:4f}'.format(best_acc))
-
     # load best model weights
     model.load_state_dict(best_model_wts)
     return model
@@ -210,6 +282,7 @@ criterion=nn.CrossEntropyLoss()
 optimizer=optim.SGD(model.fc.parameters(), lr=learning_rate, momentum=momentum)
 scheduler=lr_scheduler.StepLR(optimizer, step_size=step_size, gamma=gamma)
 
+
 # view train samples
 view_samples(sample_images=glob.glob(sample_train_dir+"/*.jpg"))
 # Begin train
@@ -219,59 +292,14 @@ date = datetime.now().strftime("%Y_%m_%d_%I_%M_%S")
 save_path=f"saved_model/{date}_bestmodel.pth"
 torch.save(model, save_path)
 
-
 # Begin Test 
 saved_model="saved_model/2022_01_28_05_33_34_bestmodel.pth"
 # load model
 trained_model=torch.load(saved_model)
 trained_model.eval()
 print("Loaded saved model...")
-
-def image_loader(loader, image_name):
-    image = Image.open(image_name)
-    image = loader(image).float()
-    image = image.clone().detach()
-    image = image.unsqueeze(0)
-    return image
-
-
-def view_sample_results(model,sample_test_dir):
-    test_images=glob.glob(sample_test_dir+"/*.jpg")
-    # create figure
-    fig = plt.figure(figsize=(10, 7))
-    rows = 2
-    columns = 4
-    for i,img in enumerate(test_images):
-        # Load image
-        image=image_loader(data_transforms['test'], img)
-        output=trained_model(image)
-        prob = F.softmax(output, dim=1)
-        top_p, top_class = prob.topk(4)  
-        
-        top_probs=top_p.detach().numpy()[0]
-        top_classes=top_class.detach().numpy()[0]
-        classes=[idx_2_class[str(i)] for i in top_classes]
-        probabilities=[round(i*100,2) for i in top_probs]
-        results=dict(zip(classes,probabilities))        
-
-        img = plt.imread(img)
-        fig.add_subplot(rows, columns, i+1)    
-        # showing image
-        plt.imshow(img)
-        plt.axis('off')
-        data="ant: {}%\nbee: {}%\ncat: {}%\ndog: {}%".format(results['ants'],results['bees'],results['cats'],results['dogs'])    
-        plt.text(x=2, y=-3, s=data,c='red',fontsize=7)
-    writer.add_figure('TestingImages/sample', fig, global_step=0)
-    writer.flush()
-
-
-
+# View sample results
 view_sample_results(trained_model,sample_test_dir)
-
-
-# TODO: Run inference on all the images in validation
-# TODO: Get the probabilities
-# TODO: Compute TPR, FPR
-# TODO: Plot the auroc for different thresholds
-
+# Perform full scale testing and view roc curves
+view_auc_roc(trained_model,test_image_dir)
 writer.close()
