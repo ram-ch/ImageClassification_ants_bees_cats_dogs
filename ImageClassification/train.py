@@ -16,7 +16,7 @@ import torch.optim as optim
 from torch.optim import lr_scheduler
 import torchvision
 from torchvision import datasets, models, transforms
-from sklearn.metrics import confusion_matrix, roc_auc_score, precision_score, recall_score,f1_score, log_loss, roc_curve, auc
+from sklearn.metrics import confusion_matrix, precision_score, recall_score,f1_score,  roc_curve, auc
 
 import torch.nn.functional as F
 from tensorboardX import SummaryWriter
@@ -32,6 +32,7 @@ sample_test_dir="C:/codebase/ComputerVision/data/sample_test_data"
 test_image_dir="C:/codebase/ComputerVision/data/ants_bees_cats_dogs/val"
 
 # Params
+num_classes=4
 learning_rate=0.001
 momentum=0.9
 step_size=7
@@ -73,7 +74,6 @@ class_names=image_datasets['train'].classes
 
 
 def view_samples(sample_images): 
-    # TODO: Get sample images from the train data folders
     label_wrap_length=50
     label_font_size=8
     fig=plt.figure()
@@ -125,7 +125,7 @@ def get_predictions(loader,img,trained_model):
     image = image.unsqueeze(0)
     output = trained_model(image)
     prob = F.softmax(output, dim=1)
-    top_p, top_class = prob.topk(4)  
+    top_p, top_class = prob.topk(num_classes)  
     # get labels and scores
     top_probs=top_p.detach().numpy()[0]
     top_classes=top_class.detach().numpy()[0]
