@@ -56,4 +56,8 @@ for i,img in enumerate(test_images):
     data="ant: {}% bee: {}% cat: {}% dog: {}%".format(results['ants'],results['bees'],results['cats'],results['dogs'])    
     plt.text(x=2, y=-3, s=data,c='red',fontsize=10)
     plt.show()
-  
+
+
+# TODO: How to identify negative samples
+# TODO: Add inference time
+# TODO: Try c++ inference script
