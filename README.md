@@ -1,2 +1,1 @@
-# ComputerVision
-Repo for computer vision applications
+# This is intro about image classification
