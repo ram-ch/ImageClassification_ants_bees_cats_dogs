@@ -12,8 +12,8 @@ The training data includes:
 The data is is just a small subset from all the above mentioned classes
 
 
-<img src="assets/ant.jpg" alt="Ant" width="200" height="200"/> <img src="assets/bee.jpg" alt="Bee" width="200" height="200"/>
-<img src="assets/cat.17.jpg" alt="Cat" width="200" height="200"/> <img src="assets/dog.12.jpg" alt="Dog" width="200" height="200"/>   
+<img src="assets/ant.jpg" alt="Ant" width="300" height="300"/> <img src="assets/bee.jpg" alt="Bee" width="300" height="300"/>
+<img src="assets/cat.17.jpg" alt="Cat" width="300" height="300"/> <img src="assets/dog.12.jpg" alt="Dog" width="300" height="300"/>   
 
 ### Data Preprocessing   
 * In the data preprocessing step I have used albumentation library for image augmentation  
