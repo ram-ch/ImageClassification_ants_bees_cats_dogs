@@ -68,7 +68,6 @@ def view_samples(sample_images):
         image=Image.open(sample).resize((256,256),Image.LANCZOS)
         plt.subplot(1, len(sample_images), i+1)
         plt.imshow(image)
-        plt.savefig('train_samples.png')
         title=os.path.basename(sample).split('.')[0]
         title=textwrap.wrap(title, label_wrap_length)
         title="\n".join(title)
