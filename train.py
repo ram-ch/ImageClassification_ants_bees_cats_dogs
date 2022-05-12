@@ -1,76 +1,63 @@
+# for sys utils
 import os
 import sys
 import time
 import copy
 import glob
 from datetime import datetime
+# for data
 import numpy as np
 import pandas as pd
+# for images & viz
 import matplotlib.pyplot as plt
 import seaborn as sns
 from PIL import Image
 import textwrap, os
+import cv2
+# for model
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 import torch.optim as optim
 from torch.optim import lr_scheduler
+from torch.utils.data import Dataset, DataLoader
 import torchvision
+from torchvision.models import resnet18, resnet101, vgg16
 from torchvision import datasets, models, transforms
+# for metrics
 from sklearn.metrics import confusion_matrix, precision_score, recall_score,f1_score,  roc_curve, auc
-
-import torch.nn.functional as F
+# for augmentation
+import albumentations as A
+from albumentations.pytorch.transforms import ToTensorV2
 from tensorboardX import SummaryWriter
-
-
 writer = SummaryWriter('runs/image_classifier')
 device=torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-# paths
-data_dir="C:/codebase/ComputerVision/data/ants_bees_cats_dogs"
-sample_train_dir="C:/codebase/ComputerVision/data/sample_train_data"
-sample_test_dir="C:/codebase/ComputerVision/data/sample_test_data"
-test_image_dir="C:/codebase/ComputerVision/data/ants_bees_cats_dogs/val"
+class ImageFolder(Dataset):
+    def __init__(self, root_dir, transform=None):
+        super(ImageFolder, self).__init__()
+        self.data = []
+        self.root_dir = root_dir
+        self.transform = transform
+        self.class_names = os.listdir(root_dir)
 
-# Params
-num_classes=4
-learning_rate=0.001
-momentum=0.9
-step_size=7
-gamma=0.1
-num_epochs=1
-batch_size=5
-mean=np.array([0.45,0.456,0.406])
-std=np.array([0.229, 0.224, 0.225])
-idx_2_class={'0':'ants', '1':'bees', '2':'cats', '3':'dogs'}
-class_2_idx={'ants': 0, 'bees': 1,'cats':2,'dogs':3}
+        for index, name in enumerate(self.class_names):
+            files = os.listdir(os.path.join(root_dir, name))
+            self.data += list(zip(files, [index]*len(files)))
 
-# Data transformers
-data_transforms={
-    'train': transforms.Compose([
-                                transforms.Resize(256),
-                                transforms.CenterCrop(224),
-                                transforms.ToTensor(),
-                                transforms.Normalize(mean,std)
-                                ]),
-    'val': transforms.Compose([
-                               transforms.Resize(256),
-                               transforms.CenterCrop(224),
-                               transforms.ToTensor(),
-                               transforms.Normalize(mean,std)
-                               ]),
-    'test': transforms.Compose([
-                                transforms.Resize(256),
-                                transforms.CenterCrop(224),
-                                transforms.ToTensor()])
-}
+    def __len__(self):
+        return len(self.data)
 
-# import data
-sets=['train','val']
-image_datasets={x:datasets.ImageFolder(os.path.join(data_dir,x),data_transforms[x]) for x in sets}
-dataloaders={x:torch.utils.data.DataLoader(image_datasets[x], batch_size=batch_size, shuffle=True, num_workers=0) for x in sets}
-images, labels = iter(dataloaders['train']).next() # sample input
-dataset_sizes={x:len(image_datasets[x]) for x in sets}
-class_names=image_datasets['train'].classes
+    def __getitem__(self, index):
+        img_file, label = self.data[index]
+        root_and_dir = os.path.join(self.root_dir, self.class_names[label])        
+        image_filepath=os.path.join(root_and_dir, img_file)
+        image = cv2.imread(image_filepath)
+        image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+        if self.transform is not None:
+            image = self.transform(image=image)["image"]
+        return image, label
+
 
 
 def view_samples(sample_images): 
@@ -81,6 +68,7 @@ def view_samples(sample_images):
         image=Image.open(sample).resize((256,256),Image.LANCZOS)
         plt.subplot(1, len(sample_images), i+1)
         plt.imshow(image)
+        plt.savefig('train_samples.png')
         title=os.path.basename(sample).split('.')[0]
         title=textwrap.wrap(title, label_wrap_length)
         title="\n".join(title)
@@ -118,79 +106,6 @@ def view_precision_recall_f1(predictions, actuals,phase,epoch):
     return
 
 
-def get_predictions(loader,img,trained_model):
-    image = Image.open(img)
-    image = loader(image).float()
-    image = image.clone().detach()
-    image = image.unsqueeze(0)
-    output = trained_model(image)
-    prob = F.softmax(output, dim=1)
-    top_p, top_class = prob.topk(num_classes)  
-    # get labels and scores
-    top_probs=top_p.detach().numpy()[0]
-    top_classes=top_class.detach().numpy()[0]
-    return top_probs,top_classes
-
-
-def view_sample_results(trained_model,sample_test_dir):
-    test_images=glob.glob(sample_test_dir+"/*.jpg")
-    # create figure
-    fig = plt.figure(figsize=(10, 7))
-    rows = 2
-    columns = 4
-    for i,img in enumerate(test_images):
-        # Load image
-        top_probs, top_classes = get_predictions(data_transforms['test'], img, trained_model)
-        classes=[idx_2_class[str(i)] for i in top_classes]
-        probabilities=[round(i*100,2) for i in top_probs]
-        results=dict(zip(classes,probabilities))        
-        img = plt.imread(img)
-        fig.add_subplot(rows, columns, i+1)    
-        # showing image
-        plt.imshow(img)
-        plt.axis('off')
-        data="ant: {}%\nbee: {}%\ncat: {}%\ndog: {}%".format(results['ants'],results['bees'],results['cats'],results['dogs'])    
-        plt.text(x=2, y=-3, s=data,c='red',fontsize=7)
-    writer.add_figure('Testimages/sample', fig, global_step=0)
-    writer.flush()
-
-
-def view_auc_roc(trained_model,test_image_dir):   
-    test_images=glob.glob(test_image_dir+"/*/*.jpg") 
-    final_predictions=[]
-    ground_truth=[]
-    j=0
-    print("Performing inference on test images...")
-    for i,img in enumerate(test_images):
-        ground_truth.append(img.split("\\")[1])
-        # Load image
-        top_probs, top_classes = get_predictions(data_transforms['test'], img, trained_model)    
-        classes=[idx_2_class[str(i)] for i in top_classes]
-        probabilities=[round(i*100,2) for i in top_probs]
-        results=dict(zip(classes,top_probs))
-        final_predictions.append(results)
-
-    ground_truth=[class_2_idx[i] for i in ground_truth]
-    results_df=pd.DataFrame.from_dict(final_predictions)
-    # create figure
-    fig = plt.figure(figsize=(10, 7))
-    for i,c in enumerate(class_names):
-        fpr, tpr, thresh = roc_curve(ground_truth, results_df[c].tolist(), pos_label=i)
-        auc_val=round(auc(fpr,tpr),4)
-        plt.plot(fpr,tpr,label=f'AUC {c}: {auc_val}')
-        plt.grid()
-        plt.xlim([0.0, 1.0])
-        plt.ylim([0.0, 1.05])
-        plt.xlabel("False Positive Rate")
-        plt.ylabel("True Positive Rate")
-        plt.title("Receiver operating characteristic - Multiclass")
-        plt.legend(loc="lower right")    
-
-    writer.add_figure('AUC-ROC', fig, global_step=0)
-    writer.flush()
-    return
-
-
 def train_model(model, criterion, optimizer, scheduler, num_epochs=25):
     since = time.time()
     best_model_wts = copy.deepcopy(model.state_dict())
@@ -209,7 +124,7 @@ def train_model(model, criterion, optimizer, scheduler, num_epochs=25):
             prediction_labels=[]
             actual_labels=[]
             # Iterate over data.
-            for inputs, labels in dataloaders[phase]:
+            for inputs, labels in dataloader[phase]:
                 inputs = inputs.to(device)
                 labels = labels.to(device)
                 # forward - track history if only in train
@@ -222,7 +137,6 @@ def train_model(model, criterion, optimizer, scheduler, num_epochs=25):
                         optimizer.zero_grad()
                         loss.backward()
                         optimizer.step()
-
                 # statistics
                 running_loss += loss.item() * inputs.size(0)
                 running_corrects += torch.sum(preds == labels.data)
@@ -265,41 +179,72 @@ def train_model(model, criterion, optimizer, scheduler, num_epochs=25):
     return model
 
 
-# Freeze all the network except the final layer 
-# Set required_grads==False to freeze all the parameters so the gradients are not computed in backward()
-model=torchvision.models.resnet18(pretrained=True)
-for param in model.parameters():
-    param.requires_grad=False
+if __name__=='__main__':
 
-writer.add_graph(model, images)
-writer.flush()
+    # TODO: Read params from config
+    # TODO: Set pretrained model from config
+    # TODO: Modularize the model selection, optimizer selection
 
-# Parameters of newly constructed modules have requires_grad=True by default
-num_ftrs=model.fc.in_features
-model.fc=nn.Linear(num_ftrs,len(class_names))
-model=model.to(device)
-criterion=nn.CrossEntropyLoss()
-optimizer=optim.SGD(model.fc.parameters(), lr=learning_rate, momentum=momentum)
-scheduler=lr_scheduler.StepLR(optimizer, step_size=step_size, gamma=gamma)
+    # paths
+    data_dir="data/cats_dogs_bees_ants_125/"
+    sample_train_dir=os.path.join(data_dir,"train_samples")
+
+    # Params
+    model='resnet101'
+    num_classes=4
+    learning_rate=0.001
+    momentum=0.9
+    step_size=7
+    gamma=0.1
+    num_epochs=30
+    batch_size=40
+    optimizer='Adam'
+    mean=np.array([0.45,0.456,0.406])
+    std=np.array([0.229, 0.224, 0.225])
+    idx_2_class={'0':'ants', '1':'bees', '2':'cats', '3':'dogs'}
+    class_2_idx={'ants': 0, 'bees': 1,'cats':2,'dogs':3}
+    class_names=['ants','bees','cats','dogs']
+
+    # 1. Data preprocession
+    # Image augmentations
+    transform = A.Compose([A.Resize(width=256,height=256),
+                                A.CenterCrop(width=224,height=224),
+                                A.Normalize(mean,std),
+                                ToTensorV2()])
+    # train and val data loader
+    sets=['train','val']
+    image_datasets={x:ImageFolder(os.path.join(data_dir,x),transform=transform) for x in sets}
+    dataloader={x:DataLoader(image_datasets[x], batch_size=batch_size, shuffle=True, num_workers=0) for x in sets}
+    images, labels = iter(dataloader['train']).next() # sample input
+    dataset_sizes={x:len(image_datasets[x]) for x in sets}
+    # view train samples
+    view_samples(sample_images=glob.glob(sample_train_dir+"/*.jpg"))
+
+    # 2. Build models - Using pretrained for transfer learning
+    if model=='resnet101':
+        model=resnet101(pretrained=True)
+    elif model=='vgg16':
+        model=resnet101(pretrained=True)
+    for param in model.parameters():
+        param.requires_grad=False
+    # add mdoel graph to TB
+    writer.add_graph(model, images)
+    writer.flush()
+    
+    num_ftrs=model.fc.in_features
+    model.fc=nn.Linear(num_ftrs,len(class_names))
+    model=model.to(device)
+    criterion=nn.CrossEntropyLoss()
+    if optimizer=="Adam":
+        optimizer=optim.SGD(model.fc.parameters(), lr=learning_rate, momentum=momentum)        
+    elif optimizer=="SGD":
+        optimizer=optim.SGD(model.fc.parameters(), lr=learning_rate, betas=(0.9, 0.999), eps=1e-08)    
+    scheduler=lr_scheduler.StepLR(optimizer, step_size=step_size, gamma=gamma)
 
 
-# view train samples
-view_samples(sample_images=glob.glob(sample_train_dir+"/*.jpg"))
-# Begin train
-model=train_model(model, criterion, optimizer, scheduler, num_epochs=num_epochs)
-# save model
-date = datetime.now().strftime("%Y_%m_%d_%I_%M_%S")
-save_path=f"saved_model/{date}_bestmodel.pth"
-torch.save(model, save_path)
-
-# Begin Test 
-saved_model="saved_model/2022_01_28_05_33_34_bestmodel.pth"
-# load model
-trained_model=torch.load(saved_model)
-trained_model.eval()
-print("Loaded saved model...")
-# View sample results
-view_sample_results(trained_model,sample_test_dir)
-# Perform full scale testing and view roc curves
-view_auc_roc(trained_model,test_image_dir)
-writer.close()
+    # 3. Train & val 
+    model=train_model(model, criterion, optimizer, scheduler, num_epochs=num_epochs)
+    # save model
+    date = datetime.now().strftime("%Y_%m_%d_%I_%M_%S")
+    save_path=f"saved_model/{date}_bestmodel.pth"
+    torch.save(model, save_path) # save model

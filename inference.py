@@ -13,8 +13,8 @@ import torch.nn.functional as F
 device=torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 # params
-test_image_dir="C:/codebase/ComputerVision/data/sample_test_data"
-saved_model="saved_model/2022_01_28_05_33_34_bestmodel.pth"
+test_image_dir="data/cats_dogs_bees_ants_125/test_samples"
+saved_model="saved_model/2022_05_10_11_51_20_bestmodel.pth"
 idx_2_class={'0':'ants', '1':'bees', '2':'cats', '3':'dogs'}
 
 
@@ -30,6 +30,7 @@ trained_model=torch.load(saved_model)
 trained_model.eval()
 
 test_images=glob.glob(test_image_dir+"/*.jpg")
+print(test_images)
 # create figure
 fig = plt.figure(figsize=(10, 7))
 for i,img in enumerate(test_images):
