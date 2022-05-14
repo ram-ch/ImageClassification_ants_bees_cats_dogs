@@ -28,7 +28,7 @@ The data is is just a small subset from all the above mentioned classes
 ### Testing   
 * A sample of ~300 images are used to test the classifier   
 * The results are stored in a csv file with columns - image, label, prediction
-* This file will be used for computation of evaluation metrics - Confusion matrix, ROC-AUC plot ,f1-score, log loss   
+* This file is used for computation of evaluation metrics - Confusion matrix, ROC-AUC plot ,f1-score, log loss   
 F1 score: 0.89   
 Log loss: 0.33   
 ### Confusion matrix  
@@ -37,6 +37,7 @@ Log loss: 0.33
 ### ROC-AUC     
 <img src="assets/auc.png" alt="auc" width="500" height="500"/>  
 
+* The test report is available in Report.ipynb
 
 ### Inference    
 * The model with best check point is saved and loaded for inference      
