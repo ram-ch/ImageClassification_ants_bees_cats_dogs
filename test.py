@@ -1,92 +1,93 @@
+import os
+import glob
+import time
+from datetime import datetime
+import numpy as np
+import pandas as pd
+import matplotlib.pyplot as plt
+from PIL import Image
+import torch
+import torchvision
+from torchvision import transforms
+import torch.nn.functional as F
+import seaborn as sns
+device=torch.device("cuda" if torch.cuda.is_available() else "cpu")
+from tqdm import tqdm
+
+
 """
-# In Progress
-Run test on a sample of images, compute
-Confusion matrix
-ROC curves,
-F1 score,
-map
-
-Save the results to jinja templates
+Read a csv file with test files list
+parse the path and perform inference
+save the results to a csv file with image, label, prediction
 """
-def get_predictions(loader,img,trained_model):
-    image = Image.open(img)
-    image = loader(image).float()
-    image = image.clone().detach()
-    image = image.unsqueeze(0)
-    output = trained_model(image)
-    prob = F.softmax(output, dim=1)
-    top_p, top_class = prob.topk(num_classes)  
-    # get labels and scores
-    top_probs=top_p.detach().numpy()[0]
-    top_classes=top_class.detach().numpy()[0]
-    return top_probs,top_classes
-    
-def view_sample_results(trained_model,sample_test_dir):
-    test_images=glob.glob(sample_test_dir+"/*.jpg")
-    # create figure
-    fig = plt.figure(figsize=(10, 7))
-    rows = 2
-    columns = 4
-    for i,img in enumerate(test_images):
+
+# TODO: Save the probabilities per class in the csv
+
+
+def perform_test(test_image_dir,saved_model,idx_2_class,test_csv):
+    test_df=pd.read_csv(test_csv)
+    test_images=list(test_df['image'])
+    # TODO: Use albumentation for faster transformations
+    data_transforms = transforms.Compose([
+        transforms.Resize(256),
+        transforms.CenterCrop(224),
+        transforms.ToTensor()
+    ])
+
+    # load model
+    print("Loading trained model...")
+    trained_model=torch.load(saved_model)
+    trained_model.eval()
+    print("Performing inference...")
+    start_time = time.time()
+    y_pred=[]
+    ants_probs=[]
+    bees_porbs=[]
+    cats_prob=[]
+    dogs_prob=[]
+    for i in tqdm(test_images):
+        img=os.path.join(test_image_dir,i)
         # Load image
-        top_probs, top_classes = get_predictions(data_transforms['test'], img, trained_model)
+        image = Image.open(img)
+        image = data_transforms(image).float()
+        image = image.clone().detach()
+        image = image.unsqueeze(0)
+        image = image.to(device)
+        # perform inference        
+        output=trained_model(image)
+        prob = F.softmax(output, dim=1)
+        top_p, top_class = prob.topk(4)  
+        # labels and probs
+        top_probs=top_p.cpu().detach().numpy()[0]
+        top_classes=top_class.cpu().detach().numpy()[0]
         classes=[idx_2_class[str(i)] for i in top_classes]
-        probabilities=[round(i*100,2) for i in top_probs]
-        results=dict(zip(classes,probabilities))        
-        img = plt.imread(img)
-        fig.add_subplot(rows, columns, i+1)    
-        # showing image
-        # plt.imshow(img)
-        plt.savefig('test_samples.png')
-        plt.axis('off')
-        data="ant: {}%\nbee: {}%\ncat: {}%\ndog: {}%".format(results['ants'],results['bees'],results['cats'],results['dogs'])    
-        plt.text(x=2, y=-3, s=data,c='red',fontsize=7)
-    writer.add_figure('Testimages/sample', fig, global_step=0)
-    writer.flush()
+        probabilities=[round(i*100,2) for i in top_probs]    
+        prediction=classes[0]
+        score=probabilities[0]
+        y_pred.append(prediction)
 
-def view_auc_roc(trained_model,test_image_dir):   
-    test_images=glob.glob(test_image_dir+"/*/*.jpg") 
-    final_predictions=[]
-    ground_truth=[]
-    j=0
-    print("Performing inference on test images...")
-    for i,img in enumerate(test_images):
-        ground_truth.append(img.split("\\")[1])
-        # Load image
-        top_probs, top_classes = get_predictions(data_transforms['test'], img, trained_model)    
-        classes=[idx_2_class[str(i)] for i in top_classes]
-        probabilities=[round(i*100,2) for i in top_probs]
-        results=dict(zip(classes,top_probs))
-        final_predictions.append(results)
+        
+        results=dict(zip(classes,top_probs))    
+        ants_probs.append(results['ants'])
+        bees_porbs.append(results['bees'])
+        cats_prob.append(results['cats'])
+        dogs_prob.append(results['dogs'])
 
-    ground_truth=[class_2_idx[i] for i in ground_truth]
-    results_df=pd.DataFrame.from_dict(final_predictions)
-    # create figure
-    fig = plt.figure(figsize=(10, 7))
-    for i,c in enumerate(class_names):
-        fpr, tpr, thresh = roc_curve(ground_truth, results_df[c].tolist(), pos_label=i)
-        auc_val=round(auc(fpr,tpr),4)
-        plt.plot(fpr,tpr,label=f'AUC {c}: {auc_val}')
-        plt.grid()
-        plt.xlim([0.0, 1.0])
-        plt.ylim([0.0, 1.05])
-        plt.xlabel("False Positive Rate")
-        plt.ylabel("True Positive Rate")
-        plt.title("Receiver operating characteristic - Multiclass")
-        plt.legend(loc="lower right")    
+        
 
-    writer.add_figure('AUC-ROC', fig, global_step=0)
-    writer.flush()
-    return
+    print(f"Total time taken for {len(test_images)} : {round(time.time() - start_time, 2)} sec(s)")
+    test_df['prediction']=y_pred
+    test_df['ants_prob']=ants_probs
+    test_df['bees_prob']=bees_porbs
+    test_df['cats_prob']=cats_prob
+    test_df['dogs_prob']=dogs_prob
 
-# Begin Test 
-saved_model="saved_model/2022_01_28_05_33_34_bestmodel.pth"
-# load model
-trained_model=torch.load(saved_model)
-trained_model.eval()
-print("Loaded saved model...")
-# View sample results
-view_sample_results(trained_model,sample_test_dir)
-# Perform full scale testing and view roc curves
-view_auc_roc(trained_model,test_image_dir)
-writer.close()
+    test_df.to_csv('test_result.csv',index=False)
+
+if __name__=='__main__':
+    # params
+    test_image_dir="data/cats_dogs_bees_ants_125/test"
+    saved_model="saved_model/2022_05_13_06_30_11_bestmodel.pth"
+    idx_2_class={'0':'ants', '1':'bees', '2':'cats', '3':'dogs'}
+    test_csv='test.csv'    
+    perform_test(test_image_dir,saved_model,idx_2_class,test_csv)

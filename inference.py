@@ -1,3 +1,7 @@
+"""
+Perform inference on a single image and display the results
+"""
+
 import os
 import glob
 import time
@@ -15,7 +19,7 @@ device=torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 # params
 test_image_dir="data/cats_dogs_bees_ants_125/test_samples"
-saved_model="saved_model/2022_05_12_02_20_23_bestmodel.pth"
+saved_model="saved_model/2022_05_13_06_30_11_bestmodel.pth"
 idx_2_class={'0':'ants', '1':'bees', '2':'cats', '3':'dogs'}
 
 
@@ -50,7 +54,7 @@ def view_result(classes, scores):
 
 start_time = time.time()
 # test image
-img=test_images[-2]
+img=test_images[-1]
 # Load image
 image = Image.open(img)
 image = data_transforms(image).float()
@@ -84,4 +88,6 @@ plt.show()
 # Show plot of score
 view_result(classes, probabilities)  
 
+
+# TODO: use albumentation for faster preprocessing
 # TODO: Try c++ inference script

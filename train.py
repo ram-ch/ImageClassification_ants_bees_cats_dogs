@@ -34,13 +34,12 @@ writer = SummaryWriter('runs/image_classifier')
 device=torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 class ImageFolder(Dataset):
-    def __init__(self, root_dir, transform=None):
+    def __init__(self, root_dir, class_names, transform=None):
         super(ImageFolder, self).__init__()
         self.data = []
         self.root_dir = root_dir
         self.transform = transform
-        self.class_names = os.listdir(root_dir)
-
+        self.class_names = class_names
         for index, name in enumerate(self.class_names):
             files = os.listdir(os.path.join(root_dir, name))
             self.data += list(zip(files, [index]*len(files)))
@@ -212,7 +211,7 @@ if __name__=='__main__':
                                 ToTensorV2()])
     # train and val data loader
     sets=['train','val']
-    image_datasets={x:ImageFolder(os.path.join(data_dir,x),transform=transform) for x in sets}
+    image_datasets={x:ImageFolder(os.path.join(data_dir,x),class_names,transform=transform) for x in sets}
     dataloader={x:DataLoader(image_datasets[x], batch_size=batch_size, shuffle=True, num_workers=0) for x in sets}
     images, labels = iter(dataloader['train']).next() # sample input
     dataset_sizes={x:len(image_datasets[x]) for x in sets}
