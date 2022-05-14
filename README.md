@@ -9,7 +9,7 @@ The training data includes:
 | Cats        | 125       | 85             |
 | Dogs        | 125       | 80             |
       
-The data is is just a small subset from all the above mentioned classes
+The data is is just a small subset from the cats vs dogs kaggle https://www.kaggle.com/c/dogs-vs-cats combined with ants and bees from kaggle https://www.kaggle.com/datasets/lys620/ants-and-bees
 
 
 <img src="assets/ant.jpg" alt="Ant" width="300" height="300"/> <img src="assets/bee.jpg" alt="Bee" width="300" height="300"/>
